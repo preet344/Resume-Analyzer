@@ -97,32 +97,27 @@ JSON FORMAT:
     json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
 
     if not json_match:
-        return {
-            "score": 0,
-            "name": "N/A",
-            "email": "N/A",
-            "experience": "N/A",
-            "skills": [],
-            "matching_skills": [],
-            "missing_skills": [],
-            "summary": "Gemini failed to return proper data."
-        }
+        return fallback_result("Gemini failed to return proper data.")
 
     json_text = json_match.group(0)
 
     try:
         return json.loads(json_text)
     except:
-        return {
-            "score": 0,
-            "name": "N/A",
-            "email": "N/A",
-            "experience": "N/A",
-            "skills": [],
-            "matching_skills": [],
-            "missing_skills": [],
-            "summary": "Gemini returned broken JSON."
-        }
+        return fallback_result("Gemini returned broken JSON.")
+
+
+def fallback_result(message):
+    return {
+        "score": 0,
+        "name": "N/A",
+        "email": "N/A",
+        "experience": "N/A",
+        "skills": [],
+        "matching_skills": [],
+        "missing_skills": [],
+        "summary": message
+    }
 
 
 def create_score_gauge(score):
@@ -136,19 +131,9 @@ def create_score_gauge(score):
     return fig
 
 
-def create_skills_chart(matching, missing):
-    fig = go.Figure([
-        go.Bar(name="Matching", x=["Skills"], y=[len(matching)]),
-        go.Bar(name="Missing", x=["Skills"], y=[len(missing)])
-    ])
-    fig.update_layout(title="Skills Analysis", barmode="group")
-    return fig
-
-
-# ✅ ✅ ✅ FINAL n8n DEBUG SENDER
+# ✅ ✅ ✅ Final Clean n8n Sender (No UI spam)
 def send_to_n8n(data):
     if not N8N_WEBHOOK_URL:
-        st.warning("⚠️ N8N webhook URL not set")
         return False
 
     payload = {
@@ -163,29 +148,16 @@ def send_to_n8n(data):
     }
 
     try:
-        res = requests.post(
-            N8N_WEBHOOK_URL,
-            json=payload,
-            timeout=15
-        )
-
-        st.subheader("📤 Workflow Debug")
-        st.success(f"✅ n8n Status Code: {res.status_code}")
-        st.code(res.text)
-        st.json(payload)
-
+        res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=15)
         return res.status_code == 200
-
-    except Exception as e:
-        st.subheader("📤 Workflow Debug")
-        st.error("❌ n8n Connection Failed")
-        st.code(str(e))
+    except:
         return False
 
 
 # =======================
 # 📥 Input UI
 # =======================
+
 col1, col2 = st.columns(2)
 
 with col1:
@@ -201,6 +173,7 @@ analyze_clicked = st.button("🚀 Analyze Resume", type="primary")
 # =======================
 # 🔍 Analysis
 # =======================
+
 if analyze_clicked:
 
     if not resume_file:
@@ -213,30 +186,37 @@ if analyze_clicked:
             resume_text = extract_text_from_pdf(resume_file)
             results = analyze_with_gemini(resume_text, job_desc)
 
-            st.header("📊 Results")
+            st.header("📊 Candidate Analysis Report")
 
             st.plotly_chart(create_score_gauge(results["score"]), use_container_width=True)
 
             col1, col2, col3 = st.columns(3)
-            col1.metric("Score", f"{results['score']}%")
-            col2.metric("Name", results["name"])
+            col1.metric("Match Score", f"{results['score']}%")
+            col2.metric("Candidate Name", results["name"])
             col3.metric("Experience", results["experience"])
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("✅ Matching Skills")
-                st.write(results["matching_skills"])
-            with col2:
-                st.subheader("❌ Missing Skills")
-                st.write(results["missing_skills"])
+            st.markdown("---")
 
-            st.subheader("📝 Summary")
-            st.info(results["summary"])
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("✅ Key Strengths")
+                st.markdown(", ".join(results["matching_skills"]) if results["matching_skills"] else "No strong matches detected.")
+
+            with col2:
+                st.subheader("⚠️ Improvement Areas")
+                st.markdown(", ".join(results["missing_skills"]) if results["missing_skills"] else "No major gaps detected.")
 
             st.markdown("---")
+
+            st.subheader("📝 Professional Summary")
+            st.success(results["summary"])
+
+            st.markdown("---")
+
             success = send_to_n8n(results)
 
             if success:
-                st.success("✅ Data successfully sent to n8n workflow!")
+                st.success("✅ Candidate data sent to n8n workflow successfully!")
             else:
-                st.error("❌ Workflow not triggered!")
+                st.warning("⚠️ n8n webhook not connected.")
