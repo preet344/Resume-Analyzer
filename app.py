@@ -36,12 +36,12 @@ st.markdown("""
 <style>
 .main-title {font-size:42px;font-weight:800;color:#4CAF50;text-align:center;}
 .subtitle {text-align:center;font-size:18px;color:#888;margin-bottom:30px;}
-.card {background:#111;padding:20px;border-radius:16px;border:1px solid #333;margin-bottom:20px;}
+.box {background:#111;padding:20px;border-radius:16px;border:1px solid #333;margin-bottom:20px;}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">🎯 AI Resume Analyzer</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Gemini-powered resume vs job description matcher</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Gemini-powered Resume vs Job Description Matcher</div>', unsafe_allow_html=True)
 
 # =======================
 # 🛠️ Helper Functions
@@ -55,7 +55,6 @@ def extract_text_from_pdf(pdf_file):
     return text[:3000]
 
 
-# ✅ ✅ ✅ ABSOLUTE SAFE GEMINI HANDLER
 def analyze_with_gemini(resume_text, job_description):
 
     prompt = f"""
@@ -83,7 +82,6 @@ JSON FORMAT:
     model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
 
-    # ✅ Ultra-safe text extraction for ALL Gemini formats
     try:
         raw_text = ""
         for cand in response.candidates:
@@ -94,10 +92,8 @@ JSON FORMAT:
     except:
         raw_text = ""
 
-    # ✅ Strip markdown if added
     raw_text = raw_text.replace("```json", "").replace("```", "").strip()
 
-    # ✅ Auto-extract JSON if Gemini adds garbage text
     json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
 
     if not json_match:
@@ -109,7 +105,7 @@ JSON FORMAT:
             "skills": [],
             "matching_skills": [],
             "missing_skills": [],
-            "summary": "Gemini failed to return valid data."
+            "summary": "Gemini failed to return proper data."
         }
 
     json_text = json_match.group(0)
@@ -125,7 +121,7 @@ JSON FORMAT:
             "skills": [],
             "matching_skills": [],
             "missing_skills": [],
-            "summary": "Gemini response could not be parsed."
+            "summary": "Gemini returned broken JSON."
         }
 
 
@@ -149,14 +145,42 @@ def create_skills_chart(matching, missing):
     return fig
 
 
+# ✅ ✅ ✅ FINAL n8n DEBUG SENDER
 def send_to_n8n(data):
-    if N8N_WEBHOOK_URL:
-        try:
-            requests.post(N8N_WEBHOOK_URL, json=data, timeout=10)
-            return True
-        except:
-            return False
-    return False
+    if not N8N_WEBHOOK_URL:
+        st.warning("⚠️ N8N webhook URL not set")
+        return False
+
+    payload = {
+        "candidate_name": data.get("name"),
+        "email": data.get("email"),
+        "score": data.get("score"),
+        "experience": data.get("experience"),
+        "skills": data.get("skills"),
+        "matching_skills": data.get("matching_skills"),
+        "missing_skills": data.get("missing_skills"),
+        "summary": data.get("summary")
+    }
+
+    try:
+        res = requests.post(
+            N8N_WEBHOOK_URL,
+            json=payload,
+            timeout=15
+        )
+
+        st.subheader("📤 Workflow Debug")
+        st.success(f"✅ n8n Status Code: {res.status_code}")
+        st.code(res.text)
+        st.json(payload)
+
+        return res.status_code == 200
+
+    except Exception as e:
+        st.subheader("📤 Workflow Debug")
+        st.error("❌ n8n Connection Failed")
+        st.code(str(e))
+        return False
 
 
 # =======================
@@ -193,17 +217,26 @@ if analyze_clicked:
 
             st.plotly_chart(create_score_gauge(results["score"]), use_container_width=True)
 
-            st.metric("Score", f"{results['score']}%")
-            st.metric("Name", results["name"])
-            st.metric("Experience", results["experience"])
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Score", f"{results['score']}%")
+            col2.metric("Name", results["name"])
+            col3.metric("Experience", results["experience"])
 
-            st.subheader("✅ Matching Skills")
-            st.write(results["matching_skills"])
-
-            st.subheader("❌ Missing Skills")
-            st.write(results["missing_skills"])
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("✅ Matching Skills")
+                st.write(results["matching_skills"])
+            with col2:
+                st.subheader("❌ Missing Skills")
+                st.write(results["missing_skills"])
 
             st.subheader("📝 Summary")
             st.info(results["summary"])
 
-            send_to_n8n(results)
+            st.markdown("---")
+            success = send_to_n8n(results)
+
+            if success:
+                st.success("✅ Data successfully sent to n8n workflow!")
+            else:
+                st.error("❌ Workflow not triggered!")
