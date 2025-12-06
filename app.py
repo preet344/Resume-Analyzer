@@ -9,7 +9,6 @@ import os
 # =======================
 # 🔐 Load Secrets
 # =======================
-
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     N8N_WEBHOOK_URL = st.secrets["N8N_WEBHOOK_URL"]
@@ -20,20 +19,32 @@ except:
     N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
 
 # =======================
-# ⚙️ Gemini Configuration
+# ⚙️ Gemini Config
 # =======================
-
 genai.configure(api_key=GEMINI_API_KEY)
 
 # =======================
 # 📐 Page Config
 # =======================
-
 st.set_page_config(
     page_title="Resume Analyzer",
     page_icon="📄",
     layout="wide"
 )
+
+# =======================
+# 🎨 UI Styling
+# =======================
+st.markdown("""
+<style>
+.main-title {font-size:42px;font-weight:800;color:#4CAF50;text-align:center;}
+.subtitle {text-align:center;font-size:18px;color:#888;margin-bottom:30px;}
+.card {background:#111;padding:20px;border-radius:16px;border:1px solid #333;margin-bottom:20px;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">🎯 AI Resume Analyzer</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Upload a resume and match it with any job description using Gemini AI</div>', unsafe_allow_html=True)
 
 # =======================
 # 🛠️ Helper Functions
@@ -43,12 +54,11 @@ def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
     text = ""
     for page in pdf_reader.pages:
-        text += page.extract_text()
-    return text
+        text += (page.extract_text() or "")
+    return text[:3000]  # ✅ Speed boost
 
 
 def analyze_with_gemini(resume_text, job_description):
-
     prompt = f"""
 Analyze this resume against the job description and respond ONLY with valid JSON (no markdown, no backticks).
 
@@ -73,9 +83,15 @@ Respond with this exact JSON format:
 Score: 75-100=Excellent, 50-74=Good, 0-49=Poor
 """
 
-    model = genai.GenerativeModel("gemini-2.5-flash")
-    response = model.generate_content(prompt)
+    model = genai.GenerativeModel(
+        "gemini-2.5-flash",
+        generation_config={
+            "temperature": 0.3,
+            "max_output_tokens": 400
+        }
+    )
 
+    response = model.generate_content(prompt)
     response_text = response.text.strip()
 
     if response_text.startswith("```json"):
@@ -87,55 +103,34 @@ Score: 75-100=Excellent, 50-74=Good, 0-49=Poor
 
 
 def create_score_gauge(score):
-
     color = "green" if score >= 75 else "orange" if score >= 50 else "red"
 
-    fig = go.Figure(
-        go.Indicator(
-            mode="gauge+number",
-            value=score,
-            domain={"x": [0, 1], "y": [0, 1]},
-            title={"text": "Match Score", "font": {"size": 20}},
-            gauge={
-                "axis": {"range": [0, 100]},
-                "bar": {"color": color},
-                "steps": [
-                    {"range": [0, 50], "color": "lightgray"},
-                    {"range": [50, 75], "color": "lightyellow"},
-                    {"range": [75, 100], "color": "lightgreen"}
-                ],
-                "threshold": {
-                    "line": {"color": "red", "width": 4},
-                    "thickness": 0.75,
-                    "value": 75
-                }
-            }
-        )
-    )
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        title={"text": "Match Score"},
+        gauge={
+            "axis": {"range": [0, 100]},
+            "bar": {"color": color},
+            "threshold": {"line": {"color": "red", "width": 4}, "value": 75}
+        }
+    ))
 
     fig.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
     return fig
 
 
 def create_skills_chart(matching, missing):
-
     fig = go.Figure([
-        go.Bar(name="Matching", x=["Skills"], y=[len(matching)], marker_color="green"),
-        go.Bar(name="Missing", x=["Skills"], y=[len(missing)], marker_color="red")
+        go.Bar(name="Matching", x=["Skills"], y=[len(matching)]),
+        go.Bar(name="Missing", x=["Skills"], y=[len(missing)])
     ])
 
-    fig.update_layout(
-        title="Skills Analysis",
-        height=300,
-        showlegend=True,
-        barmode="group"
-    )
-
+    fig.update_layout(title="Skills Analysis", height=300, barmode="group")
     return fig
 
 
 def send_to_n8n(data):
-
     if N8N_WEBHOOK_URL:
         try:
             response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=10)
@@ -146,31 +141,32 @@ def send_to_n8n(data):
 
 
 # =======================
-# 🖥️ App UI
+# 📥 Input UI
 # =======================
-
-st.title("🎯 Resume Analyzer")
-st.markdown("Upload a resume PDF and paste a job description for instant AI analysis.")
-
-st.markdown("---")
-
 col1, col2 = st.columns(2)
 
 with col1:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("📄 Upload Resume")
-    resume_file = st.file_uploader("Upload PDF", type=["pdf"])
+    resume_file = st.file_uploader("Drag & drop PDF", type=["pdf"])
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("💼 Job Description")
-    job_desc = st.text_area("Paste job description here", height=150)
+    job_desc = st.text_area("Paste JD here", height=160)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown("")
+st.markdown("<br>", unsafe_allow_html=True)
+
+center_col = st.columns([1, 2, 1])[1]
+with center_col:
+    analyze_clicked = st.button("🚀 Analyze Resume", type="primary", use_container_width=True)
 
 # =======================
-# 🔎 Analyze Button
+# 🔍 Analysis
 # =======================
-
-if st.button("🔍 Analyze", type="primary", use_container_width=True):
+if analyze_clicked:
 
     if not resume_file:
         st.error("❌ Please upload a resume")
@@ -185,8 +181,7 @@ if st.button("🔍 Analyze", type="primary", use_container_width=True):
                 resume_text = extract_text_from_pdf(resume_file)
                 results = analyze_with_gemini(resume_text, job_desc)
 
-                st.success("✅ Analysis Complete!")
-                st.markdown("---")
+                st.markdown('<div class="card">', unsafe_allow_html=True)
                 st.header("📊 Analysis Results")
 
                 col1, col2, col3 = st.columns([2, 1, 1])
@@ -208,7 +203,6 @@ if st.button("🔍 Analyze", type="primary", use_container_width=True):
                     st.metric("Name", results["name"])
                     st.metric("Experience", results["experience"])
 
-                st.markdown("---")
                 st.subheader("👤 Candidate Details")
 
                 col1, col2 = st.columns(2)
@@ -221,8 +215,6 @@ if st.button("🔍 Analyze", type="primary", use_container_width=True):
                     st.markdown("**Top Skills**")
                     for skill in results["skills"][:5]:
                         st.markdown(f"- {skill}")
-
-                st.markdown("---")
 
                 col1, col2 = st.columns(2)
 
@@ -244,11 +236,8 @@ if st.button("🔍 Analyze", type="primary", use_container_width=True):
                     for skill in results["missing_skills"][:5]:
                         st.markdown(f"- {skill}")
 
-                st.markdown("---")
                 st.subheader("📝 Summary")
                 st.info(results["summary"])
-
-                st.markdown("---")
 
                 email_data = {
                     "name": results["name"],
@@ -264,18 +253,17 @@ if st.button("🔍 Analyze", type="primary", use_container_width=True):
                 else:
                     st.warning("⚠️ n8n webhook not configured")
 
+                st.markdown('</div>', unsafe_allow_html=True)
+
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
-
 
 # =======================
 # 📌 Sidebar
 # =======================
-
 with st.sidebar:
 
     st.header("ℹ️ Score Guide")
-
     st.markdown("""
     - **75–100:** Excellent Match ✅  
     - **50–74:** Good Match ⚠️  
@@ -283,24 +271,18 @@ with st.sidebar:
     """)
 
     st.markdown("---")
-
-    st.markdown("### 💡 Why Use Resume Analyzer?")
-    st.markdown("""
-    - Instant resume vs JD comparison
-    - Highlights skills and experience
-    - Saves recruiter time
-    - Data-driven hiring decisions
-    """)
-
-    st.markdown("---")
     st.markdown("### 🔌 System Status")
 
-    if GEMINI_API_KEY:
-        st.success("✅ Gemini API Connected")
-    else:
-        st.error("❌ Add GEMINI_API_KEY to secrets")
+    col1, col2 = st.columns(2)
 
-    if N8N_WEBHOOK_URL:
-        st.success("✅ n8n Webhook Ready")
-    else:
-        st.warning("⚠️ Add N8N_WEBHOOK_URL to secrets")
+    with col1:
+        if GEMINI_API_KEY:
+            st.success("✅ Gemini")
+        else:
+            st.error("❌ Gemini")
+
+    with col2:
+        if N8N_WEBHOOK_URL:
+            st.success("✅ n8n")
+        else:
+            st.warning("⚠️ n8n")
