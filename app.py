@@ -55,7 +55,7 @@ def extract_text_from_pdf(pdf_file):
     text = ""
     for page in pdf_reader.pages:
         text += (page.extract_text() or "")
-    return text[:3000]  # ✅ speed optimized
+    return text[:3000]  # ✅ Speed optimized
 
 
 def analyze_with_gemini(resume_text, job_description):
@@ -93,26 +93,19 @@ Score: 75-100=Excellent, 50-74=Good, 0-49=Poor
 
     response = model.generate_content(prompt)
 
-    # ✅✅✅ FINAL SAFE GEMINI RESPONSE HANDLER (BUG FIX)
-    if hasattr(response, "text") and response.text:
-        response_text = response.text.strip()
-    else:
-        response_text = ""
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, "text"):
-                response_text += part.text
-        response_text = response_text.strip()
+    # ✅ ✅ ✅ BULLETPROOF RESPONSE HANDLER (NO response.text USED)
+    try:
+        response_text = response.candidates[0].content.parts[0].text.strip()
+    except Exception:
+        raise ValueError("❌ Gemini returned an invalid response format")
 
-    if not response_text:
-        raise ValueError("Empty response from Gemini")
-
-    # ✅ Clean JSON wrappers
+    # ✅ Remove markdown if Gemini adds it
     if response_text.startswith("```json"):
         response_text = response_text[7:-3]
     elif response_text.startswith("```"):
         response_text = response_text[3:-3]
 
-    return json.loads(response_text.strip())
+    return json.loads(response_text)
 
 
 def create_score_gauge(score):
